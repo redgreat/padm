@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>http://127.0.0.1:8888/index.html</loc>
+         <lastmod>2025-05-17</lastmod>
+    </url>
+    <url>
+         <loc>http://127.0.0.1:8888/doc/backend.html</loc>
+         <lastmod>2025-05-17</lastmod>
+    </url>
+    <url>
+         <loc>http://127.0.0.1:8888/doc/frontend.html</loc>
+         <lastmod>2025-05-17</lastmod>
+    </url>
+    <url>
+         <loc>http://127.0.0.1:8888/doc/mkdocs.html</loc>
+         <lastmod>2025-05-17</lastmod>
+    </url>
+</urlset>

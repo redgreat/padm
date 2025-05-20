@@ -1,0 +1,82 @@
+# 应用服务
+services:
+  # 数据库服务
+  mysql:
+    container_name: mysql
+    image: mysql:8.0
+    restart: always
+    environment:
+      TZ: "Asia/Shanghai"
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: "fastapi_vue3_admin"
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./devops/mysql/data:/var/lib/mysql
+      - ./devops/mysql/conf:/etc/mysql/conf.d
+      - ./devops/mysql/logs:/logs 
+    networks:
+      - mysql_network
+
+  # redis服务
+  redis:
+    container_name: redis
+    image: redis:6
+    restart: always
+    environment:
+      TZ: "Asia/Shanghai"
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./devops/redis/conf/redis.conf:/etc/redis/redis.conf
+      - ./devops/redis/data:/data
+    networks:
+      - redis_network
+    command: redis-server /etc/redis/redis.conf
+    
+  # 后端服务
+  backend:
+    container_name: backend
+    build:
+      context: ./
+      dockerfile: ./devops/backend/Dockerfile
+    restart: always
+    environment:
+      TZ: "Asia/Shanghai"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/home
+    networks:
+      - backend-network
+    depends_on:
+      - mysql
+      - redis
+  
+  # 前端nginx服务
+  frontend:
+    container_name: nginx
+    image: "nginx:latest"
+    restart: always
+    environment:
+      TZ: "Asia/Shanghai"
+    ports:
+      - "80:80"
+    volumes:
+      - ./devops/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./frontend/dist:/usr/share/nginx/html
+    networks:
+      - frontend_network
+    depends_on:
+      - backend
+
+# 网络
+networks:
+  mysql_network:
+    driver: bridge
+  redis_network:
+    driver: bridge
+  frontend_network:
+    driver: bridge
+  backend-network:
+    driver: bridge
