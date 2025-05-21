@@ -21,12 +21,12 @@ class ConfigModel(ModelBase):
     favicon = Column(String(500), nullable=False, default="http://localhost:8000/api/v1/static/image/logo.png", comment="网站favicon")
     logo = Column(String(500), nullable=False, default="http://localhost:8000/api/v1/static/image/logo.png", comment="网站logo")
     background = Column(String(500), nullable=False, default="http://localhost:8000/api/v1/static/image/background.png", comment="网站背景")
-    copyright = Column(String(500), nullable=False, default="Copyright © 2021-2025 fastapi-vue-admin.com 版权所有", comment="版权信息")
-    keep_record = Column(String(500), nullable=False, default="晋ICP备18005113号-3", comment="备案信息")
-    help_url = Column(String(500), nullable=False, default="https://django-vue-admin.com", comment="帮助链接")
-    privacy_url = Column(String(500), nullable=False, default="https://gitee.com/tao__tao/fastapi_vue3_admin/blob/master/LICENSE", comment="隐私政策链接")
-    clause_url = Column(String(500), nullable=False, default="https://gitee.com/tao__tao/fastapi_vue3_admin/blob/master/LICENSE", comment="服务条款链接")
-    code_url = Column(String(500), nullable=False, default="https://gitee.com/tao__tao/fastapi_vue3_admin.git", comment="源码地址")
+    copyright = Column(String(500), nullable=False, default="Copyright © 2021-2025 Lunz 版权所有", comment="版权信息")
+    keep_record = Column(String(500), nullable=False, default="鲁ICP备2022020665号", comment="备案信息")
+    help_url = Column(String(500), nullable=False, default="https://github.com/redgreat/padm.git", comment="帮助链接")
+    privacy_url = Column(String(500), nullable=False, default="https://github.com/redgreat/padm/blob/main/LICENSE", comment="隐私政策链接")
+    clause_url = Column(String(500), nullable=False, default="https://github.com/redgreat/padm/blob/main/LICENSE", comment="服务条款链接")
+    code_url = Column(String(500), nullable=False, default="https://github.com/redgreat/padm.git", comment="源码地址")
 
     # 审计字段
     description = Column(Text, nullable=True, comment="备注说明")

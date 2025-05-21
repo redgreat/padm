@@ -2,12 +2,13 @@
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from aioredis import Redis
 
 from app.common.response import StreamResponse, SuccessResponse
 from app.core.router_class import OperationLogRoute
 from app.core.base_params import PaginationQueryParams
 from app.api.v1.params.system.role_param import RoleQueryParams
-from app.core.dependencies import AuthPermission
+from app.core.dependencies import AuthPermission, redis_getter
 from app.api.v1.services.system.role_service import RoleService
 from app.api.v1.schemas.system.auth_schema import AuthSchema
 from app.api.v1.schemas.system.role_schema import (
@@ -90,8 +91,9 @@ async def batch_set_available_obj_controller(
 async def set_role_permission_controller(
     data: RolePermissionSettingSchema,
     auth: AuthSchema = Depends(AuthPermission(permissions=["system:role:permission"])),
+    redis: Redis = Depends(redis_getter)
 ) -> JSONResponse:
-    await RoleService.set_role_permission_service(data=data, auth=auth)
+    await RoleService.set_role_permission_service(data=data, auth=auth, redis=redis)
     logger.info(f"{auth.user.name} 设置角色权限成功: {data}")
     return SuccessResponse(msg="授权角色成功")
 
@@ -101,7 +103,6 @@ async def export_obj_list_controller(
     search: RoleQueryParams = Depends(),
     auth: AuthSchema = Depends(AuthPermission(permissions=["system:role:export"])),
 ) -> StreamingResponse:
-    # 获取全量数据
     role_query_result = await RoleService.get_role_list_service(search=search, auth=auth)
     role_export_result = await RoleService.export_role_list_service(role_list=role_query_result)
     logger.info('导出角色成功')

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from typing import Dict, Union, NewType
+import json
 from fastapi import Request
 from aioredis import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,9 +13,11 @@ from app.core.logger import logger
 from app.config.setting import settings
 from app.core.exceptions import CustomException
 from app.api.v1.schemas.monitor.online_schema import OnlineOutSchema
+from app.api.v1.schemas.system.menu_schema import MenuOutSchema
 from app.utils.common_util import get_random_character
 from app.utils.captcha_util import CaptchaUtil
 from app.api.v1.cruds.system.user_crud import UserCRUD
+from app.api.v1.cruds.system.menu_crud import MenuCRUD
 from app.api.v1.models.system.user_model import UserModel
 from app.api.v1.schemas.system.auth_schema import (
     JWTPayloadSchema,
@@ -44,22 +47,22 @@ class LoginService:
     async def authenticate_user_service(cls, request: Request, redis: Redis, login_form: CustomOAuth2PasswordRequestForm, db: AsyncSession) -> UserModel:
         """
         用户认证
-        
+
         Args:
             request: 请求对象
             login_form: 登录表单
             db: 数据库会话
-            
+
         Returns:
             UserModel: 认证通过的用户对象
-            
+
         Raises:
             CustomException: 认证失败时抛出异常
         """
         # 判断是否来自API文档
         referer = request.headers.get('referer', '')
         request_from_docs = referer.endswith(('docs', 'redoc'))
-        
+
         # 验证码校验
         if settings.CAPTCHA_ENABLE and not request_from_docs:
             await CaptchaService.check_captcha_service(redis=redis, key=login_form.captcha_key, captcha=login_form.captcha)
@@ -80,7 +83,7 @@ class LoginService:
 
         # 更新最后登录时间
         user = await UserCRUD(auth).update_last_login_crud(id=user.id)
-        
+
         # 创建token
         token = await cls.create_token_service(redis=redis, username=user.username)
         user_agent = parse(request.headers.get("user-agent"))
@@ -90,7 +93,7 @@ class LoginService:
             key=f"{RedisInitKeyConfig.ONLINE_USER.key}:{user.username}",
             value=OnlineOutSchema(
                 session_id=token.access_token,
-                user_id=user.id, 
+                user_id=user.id,
                 name=user.name,
                 user_name=user.username,
                 ipaddr=request.client.host,
@@ -108,17 +111,17 @@ class LoginService:
     async def create_token_service(cls, redis: Redis, username: str) -> JWTOutSchema:
         """
         创建访问令牌和刷新令牌
-        
+
         Args:
             username: 用户名
             request: 请求对象
-            
+
         Returns:
             JWTOutSchema: 包含访问令牌和刷新令牌的响应对象
         """
         access_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         refresh_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
-        
+
         now = datetime.now()
         access_token = create_access_token(payload=JWTPayloadSchema(
             sub=username,
@@ -134,7 +137,7 @@ class LoginService:
         # 清除该用户之前的token
         await RedisCURD(redis).delete(f'{RedisInitKeyConfig.ACCESS_TOKEN.key}:{username}')
         await RedisCURD(redis).delete(f'{RedisInitKeyConfig.REFRESH_TOKEN.key}:{username}')
-        
+
         # 设置新的token
         await RedisCURD(redis).set(
             key=f'{RedisInitKeyConfig.ACCESS_TOKEN.key}:{username}',
@@ -159,13 +162,13 @@ class LoginService:
     async def refresh_token_service(cls, redis: Redis, refresh_token: RefreshTokenPayloadSchema) -> JWTOutSchema:
         """
         刷新访问令牌
-        
+
         Args:
             refresh_token: 刷新令牌
-            
+
         Returns:
             JWTOutSchema: 新的令牌对象
-            
+
         Raises:
             CustomException: 刷新令牌无效时抛出异常
         """
@@ -179,17 +182,17 @@ class LoginService:
     async def logout_services_service(cls, redis: Redis, token: LogoutPayloadSchema) -> bool:
         """
         退出登录
-        
+
         Args:
             request: 请求对象
             token: 令牌
-            
+
         Returns:
             bool: 退出成功返回True
         """
         payload: JWTPayloadSchema = decode_access_token(token.token)
         username: str = payload.sub
-        
+
         # 删除Redis中的在线用户、访问令牌、刷新令牌
         await RedisCURD(redis).delete(f"{RedisInitKeyConfig.ONLINE_USER.key}:{username}")
         await RedisCURD(redis).delete(f"{RedisInitKeyConfig.ACCESS_TOKEN.key}:{username}")
@@ -197,6 +200,79 @@ class LoginService:
 
         logger.info(f"用户退出登录成功,会话账号:{username}")
         return True
+
+    @classmethod
+    async def refresh_user_permissions_service(cls, redis: Redis, db: AsyncSession, username: str) -> bool:
+        """
+        刷新用户权限
+
+        Args:
+            redis: Redis连接
+            db: 数据库会话
+            username: 用户名
+
+        Returns:
+            bool: 刷新成功返回True
+
+        Raises:
+            CustomException: 刷新失败时抛出异常
+        """
+        try:
+            # 创建认证对象
+            auth = AuthSchema(db=db)
+
+            # 获取用户信息
+            user = await UserCRUD(auth).get_by_username_crud(username=username)
+            if not user:
+                raise CustomException(msg="用户不存在")
+            if not user.available:
+                raise CustomException(msg="用户已被停用")
+
+            # 过滤可用的角色和职位
+            if hasattr(user, 'roles'):
+                user.roles = [role for role in user.roles if role.available]
+
+            # 获取用户权限集合
+            user_permissions = {
+                menu.permission
+                for role in user.roles
+                for menu in role.menus
+                if menu.permission and menu.available
+            }
+
+            # 获取菜单权限
+            if user.is_superuser:
+                menu_all = await MenuCRUD(auth).get_list_crud(search={'type': ('in', [1, 2]), 'available': True})
+                menus = [MenuOutSchema.model_validate(menu).model_dump() for menu in menu_all]
+            else:
+                menus = [
+                    MenuOutSchema.model_validate(menu).model_dump()
+                    for role in user.roles
+                    for menu in role.menus
+                    if menu.available and menu.type in [1, 2]
+                ]
+
+            # 构建用户权限信息
+            user_permission_info = {
+                "permissions": list(user_permissions),
+                "menus": menus,
+                "roles": [role.name for role in user.roles if role.available],
+                "is_superuser": user.is_superuser
+            }
+
+            # 保存到Redis
+            redis_key = f"user_permissions:{username}"
+            await RedisCURD(redis).set(
+                key=redis_key,
+                value=json.dumps(user_permission_info, ensure_ascii=False),
+                expire=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            )
+
+            logger.info(f"刷新用户 {username} 权限成功")
+            return True
+        except Exception as e:
+            logger.error(f"刷新用户 {username} 权限失败: {e}")
+            raise CustomException(msg=f"刷新用户权限失败: {e}")
 
 
 class CaptchaService:
@@ -206,13 +282,13 @@ class CaptchaService:
     async def get_captcha_service(cls, redis: Redis) -> Dict[str, Union[CaptchaKey, CaptchaBase64]]:
         """
         获取验证码
-        
+
         Args:
             request: 请求对象
-            
+
         Returns:
             Dict: 包含验证码key和base64图片的字典
-            
+
         Raises:
             CustomException: 验证码服务未启用时抛出异常
         """
@@ -243,15 +319,15 @@ class CaptchaService:
     async def check_captcha_service(cls, redis: Redis, key: str, captcha: str) -> bool:
         """
         校验验证码
-        
+
         Args:
             request: 请求对象
             key: 验证码key
             captcha: 用户输入的验证码
-            
+
         Returns:
             bool: 验证通过返回True
-            
+
         Raises:
             CustomException: 验证码无效或错误时抛出异常
         """
@@ -260,7 +336,7 @@ class CaptchaService:
 
         # 获取Redis中存储的验证码
         redis_key = f'{RedisInitKeyConfig.CAPTCHA_CODES.key}:{key}'
-        
+
         captcha_value = await RedisCURD(redis).get(redis_key)
         if not captcha_value:
             logger.warning('验证码已过期或不存在')

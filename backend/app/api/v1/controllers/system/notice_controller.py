@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.common.response import StreamResponse, SuccessResponse
 from app.core.base_params import PaginationQueryParams
-from app.core.dependencies import AuthPermission
+from app.core.dependencies import AuthPermission, get_current_user
 from app.core.router_class import OperationLogRoute
 from app.core.base_schema import BatchSetAvailable
 from app.core.logger import logger
@@ -35,12 +35,28 @@ async def get_obj_detail_controller(
 async def get_obj_list_controller(
     page: PaginationQueryParams = Depends(),
     search: NoticeQueryParams = Depends(),
-    auth: AuthSchema = Depends(AuthPermission(permissions=["system:notice:query"]))
+    auth: AuthSchema = Depends(get_current_user)
 ) -> JSONResponse:
     result_dict_list = await NoticeService.get_notice_list_service(auth=auth, search=search, order_by=page.order_by)
     result_dict = await PaginationService.get_page_obj(data_list= result_dict_list, page_no= page.page_no, page_size = page.page_size)
     logger.info(f"{auth.user.name} 查询公告列表成功")
     return SuccessResponse(data=result_dict, msg="查询公告列表成功")
+
+@router.get("/public/list", summary="查询公开公告", description="查询公开公告（仅返回可用的公告）")
+async def get_public_notice_list_controller(
+    page: PaginationQueryParams = Depends(),
+    auth: AuthSchema = Depends(get_current_user)
+) -> JSONResponse:
+    """
+    获取公开的公告列表，仅返回可用的公告
+    此接口不需要特定权限，任何登录用户都可以访问
+    """
+    search = NoticeQueryParams(available=True)
+
+    result_dict_list = await NoticeService.get_notice_list_service(auth=auth, search=search, order_by=page.order_by)
+    result_dict = await PaginationService.get_page_obj(data_list= result_dict_list, page_no= page.page_no, page_size = page.page_size)
+    logger.info(f"{auth.user.name} 查询公开公告列表成功")
+    return SuccessResponse(data=result_dict, msg="查询公开公告列表成功")
 
 @router.post("/create", summary="创建公告", description="创建公告")
 async def create_obj_controller(

@@ -1,10 +1,6 @@
 [
   {
     "user_id": 1,
-    "position_id": 5
-  },
-  {
-    "user_id": 2,
-    "position_id": 7
+    "position_id": 1
   }
 ]

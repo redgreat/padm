@@ -33,3 +33,10 @@ export function logout(body) {
     data: body,
   });
 }
+
+export function refreshPermissions() {
+  return request({
+    url: "/api/v1/system/auth/refresh/permissions",
+    method: "post",
+  });
+}

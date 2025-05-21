@@ -2,9 +2,10 @@
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from aioredis import Redis
 
 from app.common.response import SuccessResponse
-from app.core.dependencies import AuthPermission
+from app.core.dependencies import AuthPermission, redis_getter
 from app.api.v1.params.system.menu_param import MenuQueryParams
 from app.core.router_class import OperationLogRoute
 from app.api.v1.services.system.menu_service import MenuService
@@ -58,9 +59,10 @@ async def create_obj_controller(
 @router.put("/update", summary="修改菜单", description="修改菜单")
 async def update_obj_controller(
     data: MenuUpdateSchema,
-    auth: AuthSchema = Depends(AuthPermission(permissions=["system:menu:update"]))
+    auth: AuthSchema = Depends(AuthPermission(permissions=["system:menu:update"])),
+    redis: Redis = Depends(redis_getter)
 ) -> JSONResponse:
-    result_dict = await MenuService.update_menu_service(data=data, auth=auth)
+    result_dict = await MenuService.update_menu_service(data=data, auth=auth, redis=redis)
     logger.info(f"{auth.user.name} 修改菜单成功: {result_dict}")
     return SuccessResponse(data=result_dict, msg="修改菜单成功")
 

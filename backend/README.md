@@ -40,11 +40,11 @@ fastapi_project/backend
 
 - 1、克隆项目
 
-  git clone <https://gitee.com/tao__tao/fastapi_vue3_admin.git>
+  git clone <https://github.com/redgreat/padm.git>
 
 - 2、切换到项目目录
 
-  cd fastapi_vue3_admin/backend
+  cd padm/backend
 
 - 3、虚拟环境安装
 
@@ -63,7 +63,7 @@ fastapi_project/backend
 ```sh
 # 方式一：
 python main.py init   # 初始化数据
-python main.py run    # 启动服务
+python main.py run --env=dev  # 启动服务
 # 方式二：
 uvicorn main:create_app --host 0.0.0.0 --port 8000 --factory --workers 4
 # 方式三：

@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 
-from typing import List, Dict
+from typing import List, Dict, Optional
+from aioredis import Redis
 
 from app.api.v1.cruds.system.menu_crud import MenuCRUD
+from app.api.v1.cruds.system.role_crud import RoleCRUD
 from app.api.v1.schemas.system.auth_schema import AuthSchema
 from app.api.v1.schemas.system.menu_schema import (
     MenuCreateSchema,
@@ -11,6 +13,7 @@ from app.api.v1.schemas.system.menu_schema import (
 )
 from app.core.base_schema import BatchSetAvailable
 from app.core.exceptions import CustomException
+from app.core.logger import logger
 from app.utils.common_util import (
     get_parent_id_map,
     get_parent_recursion,
@@ -18,6 +21,7 @@ from app.utils.common_util import (
     get_child_recursion
 )
 from app.api.v1.params.system.menu_param import MenuQueryParams
+from app.api.v1.services.system.auth_service import LoginService
 
 
 class MenuService:
@@ -73,24 +77,50 @@ class MenuService:
         return new_menu_dict
 
     @classmethod
-    async def update_menu_service(cls, auth: AuthSchema, data: MenuUpdateSchema) -> Dict:
+    async def update_menu_service(cls, auth: AuthSchema, data: MenuUpdateSchema, redis: Optional[Redis] = None) -> Dict:
         menu = await MenuCRUD(auth).get_by_id_crud(id=data.id)
         if not menu:
             raise CustomException(msg='更新失败，该菜单不存在')
         exist_menu = await MenuCRUD(auth).get(name=data.name)
         if exist_menu and exist_menu.id != data.id:
             raise CustomException(msg='更新失败，菜单名称重复')
-        
+
         if data.parent_id:
             parent_menu = await MenuCRUD(auth).get_by_id_crud(id=data.parent_id)
             data.parent_name = parent_menu.name
         new_menu = await MenuCRUD(auth).update(id=data.id, data=data)
-        
+
         await cls.set_menu_available_service(auth=auth, data=BatchSetAvailable(ids=[data.id], available=data.available))
-        
+
+        # 如果提供了Redis连接，刷新受影响菜单的所有用户权限
+        if redis and (menu.permission != data.permission or menu.available != data.available):
+            try:
+                # 查找包含此菜单的所有角色
+                roles_with_menu = await MenuCRUD(auth).get_roles_by_menu_id_crud(menu_id=data.id)
+
+                # 获取所有受影响角色的ID
+                role_ids = [role.id for role in roles_with_menu]
+
+                if role_ids:
+                    # 获取角色关联的所有用户
+                    affected_users = await RoleCRUD(auth).get_users_by_role_ids_crud(role_ids=role_ids)
+
+                    # 刷新每个用户的权限
+                    for user in affected_users:
+                        await LoginService.refresh_user_permissions_service(
+                            redis=redis,
+                            db=auth.db,
+                            username=user.username
+                        )
+
+                    logger.info(f"已刷新菜单ID {data.id} 关联的所有用户权限")
+            except Exception as e:
+                logger.error(f"刷新菜单关联用户权限失败: {e}")
+                # 不抛出异常，避免影响主要功能
+
         new_menu_dict = MenuOutSchema.model_validate(new_menu).model_dump()
         return new_menu_dict
-    
+
     @classmethod
     async def delete_menu_service(cls, auth: AuthSchema, id: int) -> None:
         menu = await MenuCRUD(auth).get_by_id_crud(id=id)
@@ -105,7 +135,7 @@ class MenuService:
         """
         menu_list = await MenuCRUD(auth).get_list_crud()
         total_ids = []
-        
+
         if data.available:
             # 激活，则需要把所有父级菜单都激活
             id_map = get_parent_id_map(model_list=menu_list)

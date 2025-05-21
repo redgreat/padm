@@ -16,7 +16,7 @@
             <a-tab-pane :key="1" tab="账户密码登录">
               <a-form :model="loginForm" @finish="onFinish">
                 <a-form-item name="username" :rules="[{ required: true, message: '用户名是必填项！' }]">
-                  <a-input v-model:value="loginForm.username" placeholder="用户名: admin or test or demo">
+                  <a-input v-model:value="loginForm.username" placeholder="请输入用户名">
                     <template #prefix>
                       <UserOutlined />
                     </template>
@@ -24,7 +24,7 @@
                 </a-form-item>
 
                 <a-form-item name="password" :rules="[{ required: true, message: '密码是必填项！' }]">
-                  <a-input-password v-model:value="loginForm.password" placeholder="密码: gitee 或 github 查看">
+                  <a-input-password v-model:value="loginForm.password" placeholder="请输入密码">
                     <template #prefix>
                       <LockOutlined />
                     </template>
@@ -83,21 +83,21 @@
           </div>
         </div>
       </a-layout-footer>
-    
+
     </div>
 
     <!-- 弹窗区域 -->
     <div class="modal-wrapper">
-      <a-modal 
-        v-model:open="modalVisible" 
-        :title="modalType === 'forgetPassword' ? '忘记密码' : '用户注册'" 
-        @ok="handleModalSubmit" 
+      <a-modal
+        v-model:open="modalVisible"
+        :title="modalType === 'forgetPassword' ? '忘记密码' : '用户注册'"
+        @ok="handleModalSubmit"
         :confirmLoading="modalLoading">
 
         <!-- 忘记密码表单 -->
-        <a-form v-if="modalType === 'forgetPassword'" 
-          :model="forgetPasswordForm" 
-          ref="forgetPasswordFormRef" 
+        <a-form v-if="modalType === 'forgetPassword'"
+          :model="forgetPasswordForm"
+          ref="forgetPasswordFormRef"
           :rules="{
           username: [{ required: true, message: '请输入用户名!' }],
           mobile: [{ required: true, message: '请输入手机号!', pattern: /^1[3-9]\d{9}$/ }],
@@ -116,8 +116,8 @@
 
         <!-- 注册表单 -->
         <a-form v-else
-          :model="registerForm" 
-          ref="registerFormRef" 
+          :model="registerForm"
+          ref="registerFormRef"
           :rules="{
           username: [{ required: true, message: '请输入用户名!', min: 3 }],
           name: [{ required: true, message: '请输入名称!' }],
@@ -159,10 +159,10 @@ import { useRouter } from "vue-router";
 import { UserOutlined, LockOutlined, createFromIconfontCN } from '@ant-design/icons-vue';
 import { save_token } from "@/utils/util"
 import { message } from 'ant-design-vue';
-import { login, getCaptcha } from "@/api/system/auth"
+import { login, getCaptcha, refreshPermissions } from "@/api/system/auth"
 import { registerUser, forgetPassword } from "@/api/system/user"
 import type { LoginForm, CaptchaState, ForgetPasswordForm, RegisterForm } from './types'
-import { useConfigStore } from "@/store/index";
+import { useConfigStore, useUserStore, useNoticeStore } from "@/store/index";
 
 const router = useRouter();
 const loginFlag = ref(false);
@@ -228,7 +228,7 @@ const showModal = (type: 'forgetPassword' | 'register') => {
 
 const handleModalSubmit = () => {
   modalLoading.value = true;
-  
+
   if (modalType.value === 'forgetPassword') {
     forgetPasswordFormRef.value.validate().then(() => {
       forgetPassword(forgetPasswordForm)
@@ -254,16 +254,34 @@ const handleModalSubmit = () => {
   }
 };
 
+const userStore = useUserStore();
+const noticeStore = useNoticeStore();
+
 const onFinish = (values: LoginForm) => {
   loginFlag.value = true;
   values.captcha_key = captchaState.key;
-  
+
   login(values)
     .then(response => {
       const { status_code, data } = response.data;
       if (status_code === 200) {
         save_token(data.access_token, data.refresh_token, data.expires_in);
-        router.push('/');
+
+        refreshPermissions()
+          .then(() => {
+            userStore.clearUserInfo();
+            noticeStore.clearUserInfo();
+            userStore.getUserInfo().then(() => {
+              router.push('/');
+            });
+          })
+          .catch(() => {
+            userStore.clearUserInfo();
+            noticeStore.clearUserInfo();
+            userStore.getUserInfo().then(() => {
+              router.push('/');
+            });
+          });
       }
     })
     .catch(error => {
@@ -368,7 +386,7 @@ onMounted(() => {
 .register-link {
   text-align: center;
   margin-top: 16px;
-  
+
   a {
     color: #1890ff;
     cursor: pointer;

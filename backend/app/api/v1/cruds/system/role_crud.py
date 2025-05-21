@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 
 from typing import Dict, List, Sequence, Optional
+from sqlalchemy import select
 
 from app.core.base_crud import CRUDBase
 from app.api.v1.models.system.role_model import RoleModel
+from app.api.v1.models.system.user_model import UserModel, UserRolesModel
 from app.api.v1.schemas.system.role_schema import RoleCreateSchema, RoleUpdateSchema
 from app.api.v1.schemas.system.auth_schema import AuthSchema
 from app.api.v1.cruds.system.menu_crud import MenuCRUD
@@ -52,3 +54,18 @@ class RoleCRUD(CRUDBase[RoleModel, RoleCreateSchema, RoleUpdateSchema]):
     async def set_available_crud(self, ids: List[int], available: bool) -> None:
         """设置角色的可用状态"""
         await self.set(ids=ids, available=available)
+
+    async def get_users_by_role_ids_crud(self, role_ids: List[int]) -> List[UserModel]:
+        """获取角色关联的所有用户"""
+        query = (
+            select(UserModel)
+            .join(UserRolesModel, UserRolesModel.user_id == UserModel.id)
+            .where(UserRolesModel.role_id.in_(role_ids))
+            .where(UserModel.available == True)
+            .distinct()
+        )
+
+        result = await self.db.execute(query)
+        users = result.scalars().all()
+
+        return list(users)

@@ -14,6 +14,7 @@ from app.api.v1.services.system.auth_service import (
     CaptchaService
 )
 from app.api.v1.schemas.system.auth_schema import (
+    AuthSchema,
     CaptchaOutSchema,
     JWTOutSchema,
     RefreshTokenPayloadSchema,
@@ -35,7 +36,7 @@ router = APIRouter(route_class=OperationLogRoute)
 @router.post("/login", summary="登录", description="登录", response_model=JWTOutSchema)
 async def login_for_access_token_controller(
     request: Request,
-    redis: Redis = Depends(redis_getter), 
+    redis: Redis = Depends(redis_getter),
     login_form: CustomOAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(db_getter),
 ) -> Union[JSONResponse, Dict]:
@@ -52,9 +53,8 @@ async def login_for_access_token_controller(
 @router.post("/token/refresh", summary="刷新token", description="刷新token", response_model=JWTOutSchema, dependencies=[Depends(get_current_user)])
 async def get_new_token_controller(
     payload: RefreshTokenPayloadSchema,
-    redis: Redis = Depends(redis_getter) 
+    redis: Redis = Depends(redis_getter)
 ) -> JSONResponse:
-    # 解析当前的访问Token以获取用户名
     new_token = await LoginService.refresh_token_service(redis=redis, refresh_token=payload)
     token_dict = new_token.model_dump()
     logger.info(f"刷新token成功: {token_dict}")
@@ -65,7 +65,6 @@ async def get_new_token_controller(
 async def get_captcha_for_login_controller(
     redis: Redis = Depends(redis_getter)
 ) -> JSONResponse:
-    # 获取验证码
     captcha = await CaptchaService.get_captcha_service(redis=redis)
     logger.info(f"获取验证码成功")
     return SuccessResponse(data=captcha, msg="获取验证码成功")
@@ -80,6 +79,19 @@ async def logout_controller(
         logger.info('退出成功')
         return SuccessResponse(msg='退出成功')
     return ErrorResponse(msg='退出失败')
+
+
+@router.post('/refresh/permissions', summary="刷新用户权限", description="刷新用户权限")
+async def refresh_permissions_controller(
+    auth: AuthSchema = Depends(get_current_user),
+    redis: Redis = Depends(redis_getter),
+    db: AsyncSession = Depends(db_getter)
+) -> JSONResponse:
+    username = auth.user.username
+    if await LoginService.refresh_user_permissions_service(redis=redis, db=db, username=username):
+        logger.info(f'用户 {username} 权限刷新成功')
+        return SuccessResponse(msg='权限刷新成功')
+    return ErrorResponse(msg='权限刷新失败')
 
 
 # 以下接口为预留，后期会用

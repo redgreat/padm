@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 
 from typing import Any, Dict, List
+from aioredis import Redis
 
 from app.core.base_schema import BatchSetAvailable
 from app.core.exceptions import CustomException
+from app.core.logger import logger
 from app.api.v1.cruds.system.role_crud import RoleCRUD
 from app.api.v1.schemas.system.auth_schema import AuthSchema
 from app.api.v1.schemas.system.role_schema import (
@@ -14,6 +16,7 @@ from app.api.v1.schemas.system.role_schema import (
 )
 from app.utils.excel_util import ExcelUtil
 from app.api.v1.params.system.role_param import RoleQueryParams
+from app.api.v1.services.system.auth_service import LoginService
 
 
 class RoleService:
@@ -65,19 +68,38 @@ class RoleService:
         await RoleCRUD(auth).delete(ids=[id])
 
     @classmethod
-    async def set_role_permission_service(cls, auth: AuthSchema, data: RolePermissionSettingSchema) -> None:
+    async def set_role_permission_service(cls, auth: AuthSchema, data: RolePermissionSettingSchema, redis: Redis = None) -> None:
         """设置角色权限"""
         # 设置角色菜单权限
         await RoleCRUD(auth).set_role_menus_crud(role_ids=data.role_ids, menu_ids=data.menu_ids)
-        
+
         # 设置数据权限范围
         await RoleCRUD(auth).set_role_data_scope_crud(role_ids=data.role_ids, data_scope=data.data_scope)
-        
+
         # 设置自定义数据权限部门
         if data.data_scope == 5 and data.dept_ids:
             await RoleCRUD(auth).set_role_depts_crud(role_ids=data.role_ids, dept_ids=data.dept_ids)
         else:
             await RoleCRUD(auth).set_role_depts_crud(role_ids=data.role_ids, dept_ids=[])
+
+        # 如果提供了Redis连接，刷新受影响角色的所有用户权限
+        if redis:
+            try:
+                # 获取角色关联的所有用户
+                affected_users = await RoleCRUD(auth).get_users_by_role_ids_crud(role_ids=data.role_ids)
+
+                # 刷新每个用户的权限
+                for user in affected_users:
+                    await LoginService.refresh_user_permissions_service(
+                        redis=redis,
+                        db=auth.db,
+                        username=user.username
+                    )
+
+                logger.info(f"已刷新角色ID {data.role_ids} 关联的所有用户权限")
+            except Exception as e:
+                logger.error(f"刷新角色关联用户权限失败: {e}")
+                # 不抛出异常，避免影响主要功能
 
     @classmethod
     async def set_role_available_service(cls, auth: AuthSchema, data: BatchSetAvailable) -> None:
@@ -91,7 +113,7 @@ class RoleService:
         mapping_dict = {
             'id': '角色编号',
             'name': '角色名称',
-            'order': '显示顺序', 
+            'order': '显示顺序',
             'data_scope': '数据权限',
             'available': '状态',
             'description': '备注',
@@ -117,4 +139,3 @@ class RoleService:
             item['data_scope'] = data_scope_map.get(item.get('data_scope'))
 
         return ExcelUtil.export_list2excel(list_data=role_list, mapping_dict=mapping_dict)
-        
